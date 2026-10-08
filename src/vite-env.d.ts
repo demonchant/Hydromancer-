@@ -16,6 +16,7 @@ interface Window {
       'error-callback'?: () => void
     }) => string
     remove: (widgetId: string) => void
+    reset: (widgetId?: string) => void
   }
 }
 

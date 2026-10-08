@@ -266,7 +266,28 @@ function App() {
       if (error) throw error
       setAuthUser(data.user)
       setNotice('Private monitor session ready. Your saved monitor is available on this browser.')
-    } catch { setAuthMessage('A private session could not be created. Check that anonymous sign ins are enabled in Supabase, then try again.') }
+    } catch (error) {
+      const authError = error && typeof error === 'object' ? error as { code?: string; message?: string } : {}
+      const errorCode = `${authError.code ?? ''} ${authError.message ?? ''}`.toLowerCase()
+      const reference = (authError.code ?? 'unknown').replace(/[-_]/g, ' ').slice(0, 60)
+      const detail = (authError.message ?? '').replace(/[\r\n]+/g, ' ').replace(/[-_]/g, ' ').slice(0, 140)
+      if (errorCode.includes('captcha') || errorCode.includes('turnstile')) {
+        setAuthMessage(`The security check was rejected. Confirm the site key and Supabase CAPTCHA secret are from the same Turnstile widget, and that this domain is allowed. Supabase says: ${detail || reference}.`)
+      } else if (errorCode.includes('anonymous') && (errorCode.includes('disabled') || errorCode.includes('provider'))) {
+        setAuthMessage(`Anonymous sign ins are disabled in Supabase. Enable them in the Authentication provider settings. Supabase says: ${detail || reference}.`)
+      } else if (errorCode.includes('api key') || errorCode.includes('apikey')) {
+        setAuthMessage(`Supabase rejected the app key. Check that the project URL and public key belong to the same project. Supabase says: ${detail || reference}.`)
+      } else if (errorCode.includes('rate limit') || errorCode.includes('too many')) {
+        setAuthMessage(`There have been too many attempts. Wait a few minutes, refresh the security check, and try again. Supabase says: ${detail || reference}.`)
+      } else {
+        setAuthMessage(`The private session could not be created. Check Supabase anonymous access and CAPTCHA settings. Supabase says: ${detail || reference}.`)
+      }
+      if (turnstileSiteKey) {
+        setCaptchaToken('')
+        setCaptchaReady(false)
+        window.turnstile?.reset()
+      }
+    }
     setAuthLoading(false)
   }
 
