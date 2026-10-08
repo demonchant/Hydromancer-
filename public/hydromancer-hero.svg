@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 900" fill="none">
+  <defs>
+    <linearGradient id="ocean" x1="70" y1="58" x2="927" y2="868" gradientUnits="userSpaceOnUse"><stop stop-color="#163735"/><stop offset=".5" stop-color="#0C2424"/><stop offset="1" stop-color="#10201F"/></linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 455 -470 0 531 368)" gradientUnits="userSpaceOnUse"><stop stop-color="#62D6BB" stop-opacity=".24"/><stop offset="1" stop-color="#62D6BB" stop-opacity="0"/></radialGradient>
+    <linearGradient id="ring" x1="265" y1="276" x2="749" y2="668" gradientUnits="userSpaceOnUse"><stop stop-color="#C5EBDD" stop-opacity=".68"/><stop offset=".48" stop-color="#7CCCB7" stop-opacity=".18"/><stop offset="1" stop-color="#E7BD84" stop-opacity=".72"/></linearGradient>
+    <linearGradient id="thread" x1="201" y1="624" x2="811" y2="258" gradientUnits="userSpaceOnUse"><stop stop-color="#A6E4D1" stop-opacity="0"/><stop offset=".46" stop-color="#A6E4D1"/><stop offset="1" stop-color="#E9C38C" stop-opacity="0"/></linearGradient>
+    <filter id="blur" x="177" y="145" width="662" height="662" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="31"/></filter>
+    <filter id="soft" x="292" y="250" width="445" height="445" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="6"/></filter>
+  </defs>
+  <path fill="url(#ocean)" d="M0 0h1000v900H0z"/>
+  <path fill="url(#glow)" d="M0 0h1000v900H0z"/>
+  <g opacity=".17" stroke="#B4D7C9" stroke-width=".8"><path d="M0 150h1000M0 250h1000M0 350h1000M0 450h1000M0 550h1000M0 650h1000M0 750h1000"/><path d="M100 0v900M200 0v900M300 0v900M400 0v900M500 0v900M600 0v900M700 0v900M800 0v900M900 0v900"/></g>
+  <g opacity=".23" fill="#D7E6D8"><circle cx="180" cy="163" r="1.4"/><circle cx="804" cy="210" r="1.3"/><circle cx="870" cy="562" r="1.8"/><circle cx="134" cy="662" r="1.6"/><circle cx="718" cy="771" r="1.2"/><circle cx="330" cy="112" r="1.1"/><circle cx="590" cy="120" r="1.7"/></g>
+  <circle cx="514" cy="444" r="244" fill="#73C8AE" fill-opacity=".28" filter="url(#blur)"/>
+  <g stroke="url(#ring)"><ellipse cx="514" cy="450" rx="297" ry="112" stroke-width="1.2" transform="rotate(-24 514 450)"/><ellipse cx="514" cy="450" rx="272" ry="146" stroke-width="1" transform="rotate(25 514 450)"/><ellipse cx="514" cy="450" rx="228" ry="201" stroke-width="1.2" transform="rotate(-44 514 450)"/><ellipse cx="514" cy="450" rx="182" ry="254" stroke-width=".9" transform="rotate(66 514 450)"/><ellipse cx="514" cy="450" rx="248" ry="248" stroke-width="1.2" stroke-dasharray="2 9"/></g>
+  <path d="M209 581c109-114 172 21 281-59 106-77 156-191 299-167" stroke="url(#thread)" stroke-width="2"/>
+  <path d="M239 624c127-111 175-91 282-146 108-56 137-169 258-169" stroke="url(#thread)" stroke-width="1" opacity=".55"/>
+  <circle cx="514" cy="450" r="120" fill="#102A27" fill-opacity=".77" stroke="#A3DCC8" stroke-opacity=".47"/>
+  <circle cx="514" cy="450" r="91" fill="#122F2B" stroke="#D1E8DB" stroke-opacity=".15"/>
+  <circle cx="514" cy="450" r="69" fill="#61C5A7" fill-opacity=".08" filter="url(#soft)"/>
+  <circle cx="514" cy="450" r="47" fill="#163630" stroke="#B0E0CE" stroke-opacity=".68"/>
+  <path d="M514 416c-9 12-20 25-20 35a20 20 0 1 0 40 0c0-10-11-23-20-35Z" fill="#B7E5D1" fill-opacity=".82"/>
+  <path d="M505 453a9 9 0 0 0 9 9" stroke="#FFF" stroke-opacity=".82" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="514" cy="450" r="147" stroke="#C3E4D6" stroke-opacity=".16" stroke-dasharray="1 8"/>
+  <g fill="#D8E9DD"><circle cx="751" cy="328" r="4"/><circle cx="268" cy="547" r="3"/><circle cx="641" cy="674" r="2.5"/></g>
+  <g stroke="#D8E9DD" stroke-opacity=".34"><path d="M751 328h66v-35"/><path d="M268 547h-70v42"/><path d="M641 674v48h53"/></g>
+  <g fill="#D8E9DD" fill-opacity=".72"><circle cx="817" cy="293" r="2"/><circle cx="198" cy="589" r="2"/><circle cx="694" cy="722" r="2"/></g>
+  <path d="M0 837c191-18 267 11 431-2 196-16 335-36 569-13" stroke="#B2D6C7" stroke-opacity=".16"/>
+</svg>

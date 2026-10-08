@@ -1,0 +1,2 @@
+[functions.monitor]
+verify_jwt = false
