@@ -267,11 +267,13 @@ function App() {
       setAuthUser(data.user)
       setNotice('Private monitor session ready. Your saved monitor is available on this browser.')
     } catch (error) {
-      const authError = error && typeof error === 'object' ? error as { code?: string; message?: string } : {}
-      const errorCode = `${authError.code ?? ''} ${authError.message ?? ''}`.toLowerCase()
-      const reference = (authError.code ?? 'unknown').replace(/[-_]/g, ' ').slice(0, 60)
+      const authError = error && typeof error === 'object' ? error as { code?: string; message?: string; name?: string } : {}
+      const errorCode = `${authError.code ?? ''} ${authError.name ?? ''} ${authError.message ?? ''}`.toLowerCase()
+      const reference = (authError.code ?? authError.name ?? 'unknown').replace(/[-_]/g, ' ').slice(0, 60)
       const detail = (authError.message ?? '').replace(/[\r\n]+/g, ' ').replace(/[-_]/g, ' ').slice(0, 140)
-      if (errorCode.includes('captcha') || errorCode.includes('turnstile')) {
+      if (errorCode.includes('timeout') || errorCode.includes('abort')) {
+        setAuthMessage(`Supabase did not respond within 20 seconds. Check the project URL and network connection, then try again. Supabase says: ${detail || reference}.`)
+      } else if (errorCode.includes('captcha') || errorCode.includes('turnstile')) {
         setAuthMessage(`The security check was rejected. Confirm the site key and Supabase CAPTCHA secret are from the same Turnstile widget, and that this domain is allowed. Supabase says: ${detail || reference}.`)
       } else if (errorCode.includes('anonymous') && (errorCode.includes('disabled') || errorCode.includes('provider'))) {
         setAuthMessage(`Anonymous sign ins are disabled in Supabase. Enable them in the Authentication provider settings. Supabase says: ${detail || reference}.`)
@@ -424,7 +426,7 @@ function App() {
         {notice && <div className="notice" role="status"><Icon name="shield"/><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}
         {authUser && authMessage && <div className="error-banner" role="alert"><strong>Private session needs attention</strong><span>{authMessage}</span><button onClick={() => window.location.reload()}>Retry</button></div>}
         {tab === 'overview' && <>
-          {backendConfigured && authLoading && <section className="loading-panel"><span className="loader"/><div><strong>Preparing your private session</strong><span>Checking this browser for a saved monitor.</span></div></section>}
+          {backendConfigured && authLoading && <section className="loading-panel"><span className="loader"/><div><strong>Preparing your private session</strong><span>Connecting to Supabase authentication. This should take a few seconds.</span></div></section>}
           {backendConfigured && !authLoading && !authUser && <section className="signin-panel"><div className="connect-art sign-in-art" aria-hidden="true"><div className="orb orb-one"/><div className="art-ripple ripple-one"/><span className="art-drop"><Icon name="shield"/></span></div><div className="connect-copy"><p className="eyebrow">PRIVATE GUEST ACCESS</p><h2>Try the full monitor</h2><p>Start a private session to save your monitor and get background checks. No email, password, wallet, or trading access is needed.</p>{turnstileSiteKey && <div id="turnstile-widget" className="turnstile-widget" aria-label="Security check"/>}<button className="primary-button setting-button" onClick={() => void startPrivateSession()} disabled={authLoading || (Boolean(turnstileSiteKey) && !captchaReady)}>{authLoading ? 'Preparing session' : 'Continue privately'}<Icon name="arrow"/></button>{authMessage && <p className="form-note" role="status">{authMessage}</p>}<p className="field-hint">This private session belongs to this browser. Clearing browser data means you cannot return to it.</p></div></section>}
           {(!backendConfigured || hostedMode) && !address && <section className="connect-panel">
             <div className="connect-art" aria-hidden="true"><div className="orb orb-one"/><div className="orb orb-two"/><div className="art-ripple ripple-one"/><div className="art-ripple ripple-two"/><span className="art-drop"><Icon name="water"/></span><span className="art-caption">ACCOUNT SIGNAL</span></div>

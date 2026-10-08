@@ -5,8 +5,20 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
 export const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? ''
 
 export const backendConfigured = Boolean(url && key)
+const fetchWithTimeout: typeof fetch = (input, init) => {
+  const controller = new AbortController()
+  const requestSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
+  const abortRequest = () => controller.abort()
+  requestSignal?.addEventListener('abort', abortRequest, { once: true })
+  const timeout = window.setTimeout(abortRequest, 20_000)
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+    window.clearTimeout(timeout)
+    requestSignal?.removeEventListener('abort', abortRequest)
+  })
+}
 export const supabase = backendConfigured ? createClient(url!, key!, {
   auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true },
+  global: { fetch: fetchWithTimeout },
 }) : null
 
 export type MonitorRow = {
