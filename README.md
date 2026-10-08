@@ -8,7 +8,7 @@ Traders can see positions and liquidation levels in exchange interfaces, but the
 
 ## How Hydromancer helps
 
-Hydromancer reads the public account state and live market prices from Hyperliquid. It calculates the distance from each open position's live mid price to the liquidation price returned by Hyperliquid, highlights the nearest distance, and compares it with the user's chosen threshold. It stores a warning or recovery event when that threshold changes state.
+Hydromancer reads public account state and Hyperliquid mark prices. It calculates each open position's distance from the liquidation price returned by Hyperliquid, highlights the nearest distance, and compares it with the user's chosen threshold. This uses mark price because Hyperliquid uses mark price for liquidations; mid prices are shown separately as reference values. It stores a warning or recovery event when that threshold changes state.
 
 It does not estimate liquidation prices. If the exchange does not return the required fields, the signal is unavailable. It never requests a wallet connection, seed phrase, private key, or trading permission. It cannot sign or place trades.
 
@@ -27,22 +27,29 @@ Each visitor gets a private Supabase anonymous session. The monitor and events a
 ```text
 Public address
   -> Hyperliquid clearinghouseState
-  -> Hyperliquid allMids WebSocket and REST snapshot
+  -> Hyperliquid mark price contexts and per position activeAssetCtx WebSocket feeds
+  -> allMids reference feed
   -> nearest position liquidation distance
   -> private Supabase monitor and activity history
   -> Supabase Cron invokes the protected background monitor
 ```
 
-The browser refreshes account state every 15 seconds and reconnects to the public market feed when needed. Supabase Cron checks saved monitors every minute. Server events are recorded atomically so one threshold crossing does not create repeated warning events. The recovery event waits until the distance clears the threshold by two percentage points.
+The browser refreshes account state every 15 seconds, obtains a mark price context snapshot, and subscribes to mark price streams for the account's open positions. A mark observation expires after 30 seconds without an update, and account state older than 30 seconds is unavailable for risk scoring. If any open position lacks a fresh mark or a reported liquidation price, the dashboard shows partial data and pauses alerts rather than treating the remaining positions as a complete risk view. Supabase Cron checks saved monitors every minute using mark price contexts and also skips risk transitions for incomplete account data. Server events are recorded atomically so one threshold crossing does not create repeated warning events. The recovery event waits until the distance clears the threshold by two percentage points.
 
 ## Business hypothesis
 
-The initial users are active Hyperliquid traders who want position specific risk monitoring outside the exchange screen. A future business could offer free monitoring for individual traders and paid multi account workspaces, longer event history, and team alerts for trading groups. Pricing, willingness to pay, and the size of this market have not been validated; we will not present them as established facts.
+The initial customer hypothesis is an active Hyperliquid perpetual trader managing multiple open positions or needing risk visibility while away from the exchange screen. The product wedge is not another price alert: it ranks each position using the mark price used by Hyperliquid for liquidations, and suppresses the distance when that input is stale.
+
+The founder trades on Hyperliquid and built Hydromancer from a risk visibility problem experienced firsthand. This gives the project direct founder problem fit; it does not establish broader demand.
+
+The first distribution test is a public free monitor shared with relevant Hyperliquid trader communities. Before paid tiers, interview consenting traders and measure setup completion, whether they understand the distance correctly, return use after seven days, alert usefulness, and willingness to pay. A free individual monitor and paid multi account or team history are pricing hypotheses only. No external user, conversion, retention, revenue, or market size claim is made until measured.
 
 ## Data accuracy and limits
 
 - Market prices and account positions come from the live Hyperliquid mainnet public API.
-- The distance formula uses Hyperliquid's returned liquidation price and current mid price, with position direction accounted for.
+- The distance formula uses Hyperliquid's returned liquidation price and current mark price, with position direction accounted for.
+- Mid prices are displayed as separate reference prices and are not used for liquidation distance.
+- Position values, entry prices, and PnL that the exchange does not provide remain unavailable instead of displaying a fabricated zero.
 - A displayed distance is an observation, not a liquidation guarantee or financial advice.
 - The margin tile shows the cross maintenance margin field returned by Hyperliquid. It does not claim to describe every isolated position's margin.
 - In local mode without Supabase configuration, monitoring and event history stay in that browser and stop when the page closes.

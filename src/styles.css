@@ -10,3 +10,5 @@
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .home-button{border:1px solid var(--line);border-radius:5px;background:transparent;color:#b8c8bd;padding:8px 11px;font-size:10px;cursor:pointer;white-space:nowrap}.home-button:hover{border-color:rgba(145,205,171,.4);color:#e6efe7}.monitor-page.page-activity .page-heading,.monitor-page.page-settings .page-heading{padding-bottom:17px;border-bottom:1px solid var(--line)}
 @media(max-width:760px){.topbar{gap:10px}.home-button{padding:7px 9px;font-size:0}.home-button::after{content:'Home';font-size:9px}}
+.distance-value{white-space:nowrap;font:10px var(--mono);color:#aab8ad}.distance-value.clear{color:#a5d5b5}.distance-value.near{color:#f0b29c}.distance-value.unavailable{color:#84938a}
+.price-age{display:block;margin-top:4px;color:var(--muted);font-size:10px}

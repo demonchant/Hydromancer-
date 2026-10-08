@@ -7,6 +7,10 @@ type Monitor = {
 }
 type Position = { position?: { coin?: string; szi?: string; liquidationPx?: string | null } }
 type AccountState = { assetPositions?: Position[] }
+type PerpMetaAndContexts = [
+  { universe?: Array<{ name?: string }> },
+  Array<{ markPx?: string | number }>,
+]
 
 const endpoint = 'https://api.hyperliquid.xyz/info'
 const encoder = new TextEncoder()
@@ -31,17 +35,30 @@ async function info<T>(body: Record<string, unknown>): Promise<T> {
   return response.json() as Promise<T>
 }
 
-function nearestGap(state: AccountState, mids: Record<string, string>) {
-  const distances = (state.assetPositions ?? []).flatMap((entry) => {
+function markPricesFromContexts(result: PerpMetaAndContexts): Record<string, number> {
+  const [meta, contexts] = result
+  if (!Array.isArray(meta?.universe) || !Array.isArray(contexts)) {
+    throw new Error('Hyperliquid returned invalid mark price contexts.')
+  }
+  return Object.fromEntries(meta.universe.flatMap((asset, index) => {
+    const mark = Number(contexts[index]?.markPx)
+    return asset.name && Number.isFinite(mark) && mark > 0 ? [[asset.name, mark]] : []
+  }))
+}
+
+function nearestGap(state: AccountState, markPrices: Record<string, number>) {
+  const positions = (state.assetPositions ?? []).map((entry): { coin: string; gap: number } | null => {
     const position = entry.position
-    if (!position?.coin || !position.szi || !position.liquidationPx) return []
+    if (!position?.coin || !position.szi || !position.liquidationPx) return null
     const size = Number(position.szi)
-    const mark = Number(mids[position.coin])
+    const mark = markPrices[position.coin]
     const liquidation = Number(position.liquidationPx)
-    if (!Number.isFinite(size) || size === 0 || !Number.isFinite(mark) || mark <= 0 || !Number.isFinite(liquidation) || liquidation <= 0) return []
+    if (!Number.isFinite(size) || size === 0 || !Number.isFinite(mark) || mark <= 0 || !Number.isFinite(liquidation) || liquidation <= 0) return null
     const gap = size > 0 ? ((mark - liquidation) / mark) * 100 : ((liquidation - mark) / mark) * 100
-    return Number.isFinite(gap) ? [{ coin: position.coin, gap }] : []
+    return Number.isFinite(gap) ? { coin: position.coin, gap } : null
   })
+  if (positions.some((position) => position === null)) return null
+  const distances = positions.filter((position): position is { coin: string; gap: number } => position !== null)
   distances.sort((left, right) => left.gap - right.gap)
   return distances[0] ?? null
 }
@@ -73,9 +90,10 @@ Deno.serve(async (request: Request) => {
     if (monitorError) throw new Error('Monitor records could not be loaded.')
 
     if (monitors?.length) {
-      let mids: Record<string, string>
-      try { mids = await info<Record<string, string>>({ type: 'allMids' }) }
-      catch { throw new Error('Live market prices could not be read. No account risk states were changed.') }
+      let marks: Record<string, number>
+      try { marks = markPricesFromContexts(await info<PerpMetaAndContexts>({ type: 'metaAndAssetCtxs' })) }
+      catch { throw new Error('Live mark prices could not be read. No account risk states were changed.') }
+      if (!Object.keys(marks).length) throw new Error('No valid live mark prices were returned. No account risk states were changed.')
 
       const queue = [...monitors as Monitor[]]
       const runWorker = async () => {
@@ -85,7 +103,7 @@ Deno.serve(async (request: Request) => {
           const checkedAt = new Date().toISOString()
           try {
             const state = await info<AccountState>({ type: 'clearinghouseState', user: monitor.address })
-            const nearest = nearestGap(state, mids)
+            const nearest = nearestGap(state, marks)
             const { data: transition, error: transitionError } = await supabase.rpc('record_monitor_result', {
               p_monitor_id: monitor.id,
               p_gap_percent: nearest?.gap ?? null,

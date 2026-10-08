@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AccountSnapshot, connectMids, fetchAccount, fetchMids, validAddress } from './hyperliquid'
-import { nearestLiquidationDistance } from './risk'
+import { AccountSnapshot, connectMarkPrices, connectMids, fetchAccount, fetchMarkPrices, fetchMids, MarkPriceQuote, validAddress } from './hyperliquid'
+import { nearestLiquidationDistance, positionLiquidationDistance } from './risk'
 import { backendConfigured, MonitorRow, StoredAlert, supabase, turnstileSiteKey } from './supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -45,7 +45,9 @@ function App() {
   const [input, setInput] = useState(() => backendConfigured ? '' : localStorage.getItem(ADDRESS_KEY) ?? '')
   const [account, setAccount] = useState<AccountSnapshot | null>(null)
   const [mids, setMids] = useState<Record<string, number>>({})
+  const [markPrices, setMarkPrices] = useState<Record<string, MarkPriceQuote>>({})
   const [connection, setConnection] = useState<Connection>('connecting')
+  const [markConnection, setMarkConnection] = useState<Connection>('connecting')
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
   const [formError, setFormError] = useState('')
@@ -70,6 +72,7 @@ function App() {
   const requestInFlight = useRef(false)
   const activeAddress = useRef(address)
   const requestController = useRef<AbortController | null>(null)
+  const markFeed = useRef<ReturnType<typeof connectMarkPrices> | null>(null)
   const hostedMode = Boolean(backendConfigured && authUser)
 
   function navigateTo(nextScreen: 'landing' | 'monitor', nextTab: Tab = 'overview') {
@@ -201,10 +204,21 @@ function App() {
     return () => { active = false; window.clearInterval(timer) }
   }, [authUser, settingsDirty])
 
+  const freshMarkPrices = useMemo(() => Object.fromEntries(
+    Object.entries(markPrices)
+      .filter(([, quote]) => clock - quote.receivedAt <= 30000)
+      .map(([coin, quote]) => [coin, quote.price]),
+  ), [markPrices, clock])
+  const accountFresh = Boolean(account && !syncError && clock - account.receivedAt <= 30000)
+
   const distance = useMemo(() => {
-    if (!account) return null
-    return nearestLiquidationDistance(account.positions, mids)
-  }, [account, mids])
+    if (!account || !accountFresh) return null
+    return nearestLiquidationDistance(account.positions, freshMarkPrices)
+  }, [account, accountFresh, freshMarkPrices])
+  const assessedPositionCount = useMemo(() => account?.positions.reduce((count, position) => (
+    positionLiquidationDistance(position, freshMarkPrices[position.coin]) ? count + 1 : count
+  ), 0) ?? 0, [account, freshMarkPrices])
+  const unavailablePositionCount = (account?.positions.length ?? 0) - assessedPositionCount
 
   const addAlert = useCallback((kind: AlertEvent['kind'], message: string) => {
     if (hostedMode) return
@@ -247,15 +261,49 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!address) { activeAddress.current = ''; setAccount(null); return }
+    const feed = connectMarkPrices((coin, quote) => {
+      setMarkPrices((current) => ({ ...current, [coin]: quote }))
+    }, setMarkConnection)
+    markFeed.current = feed
+    return () => {
+      feed.stop()
+      if (markFeed.current === feed) markFeed.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    markFeed.current?.setCoins(account?.positions.map((position) => position.coin) ?? [])
+  }, [account])
+
+  useEffect(() => {
+    if (!address) {
+      activeAddress.current = ''
+      setAccount(null)
+      setRiskSamples([])
+      priorRisk.current = null
+      markFeed.current?.setCoins([])
+      return
+    }
     activeAddress.current = address
     requestController.current?.abort()
     requestInFlight.current = false
     setAccount(null)
     setSyncError('')
+    setRiskSamples([])
+    priorRisk.current = null
+    const markSnapshotController = new AbortController()
+    void fetchMarkPrices(markSnapshotController.signal).then((snapshot) => {
+      setMarkPrices((current) => {
+        const merged = { ...current }
+        for (const [coin, quote] of Object.entries(snapshot)) {
+          if (!merged[coin] || merged[coin].receivedAt < quote.receivedAt) merged[coin] = quote
+        }
+        return merged
+      })
+    }).catch(() => undefined)
     void refreshAccount(address)
     const timer = window.setInterval(() => void refreshAccount(address), 15000)
-    return () => { window.clearInterval(timer); requestController.current?.abort() }
+    return () => { window.clearInterval(timer); requestController.current?.abort(); markSnapshotController.abort() }
   }, [address, refreshAccount])
 
   useEffect(() => {
@@ -268,7 +316,7 @@ function App() {
   }, [threshold, hostedMode])
 
   useEffect(() => {
-    if (hostedMode || !distance || syncError || !account || Date.now() - account.receivedAt > 30000) return
+    if (hostedMode || !distance || unavailablePositionCount > 0 || syncError || !account || Date.now() - account.receivedAt > 30000) return
     const prior = priorRisk.current
     if (prior === null && distance.gap <= threshold) {
       addAlert('warning', `${distance.coin} is ${distance.gap.toFixed(2)} percent from its reported liquidation price.`)
@@ -279,7 +327,7 @@ function App() {
     }
     priorRisk.current = distance.gap
     setRiskSamples((samples) => [...samples.slice(-47), distance.gap])
-  }, [distance, threshold, addAlert, syncError, account, hostedMode])
+  }, [distance, threshold, addAlert, syncError, account, hostedMode, unavailablePositionCount])
 
   async function startPrivateSession() {
     if (!supabase) { setAuthMessage('Hosted monitor settings are missing. The local public monitor remains available.'); return }
@@ -360,6 +408,7 @@ function App() {
       setServerMonitor(null)
       setNotice('Monitor removed. Alert history remains available.')
     }
+    activeAddress.current = ''
     localStorage.removeItem(ADDRESS_KEY)
     setAddress('')
     setInput('')
@@ -412,7 +461,7 @@ function App() {
   const accountReady = Boolean(account && !syncError)
   const serverCheckAge = serverMonitor?.last_checked_at ? Math.max(0, Math.floor((clock - new Date(serverMonitor.last_checked_at).getTime()) / 1000)) : null
   const serverHealthy = Boolean(hostedMode && serverCheckAge !== null && serverCheckAge < 120 && !serverMonitor?.last_error)
-  const riskBand = !distance ? 'Not available' : distance.gap <= threshold ? 'Near threshold' : distance.gap <= threshold * 2 ? 'Watch' : 'Clear'
+  const riskBand = account && !accountFresh ? 'Account data unavailable' : unavailablePositionCount > 0 ? 'Partial data' : !distance ? 'Not available' : distance.gap <= threshold ? 'Near threshold' : distance.gap <= threshold * 2 ? 'Watch' : 'Clear'
   const dataAge = account ? Math.max(0, Math.floor((clock - account.receivedAt) / 1000)) : null
 
   if (screen === 'landing') return <Landing address={address} onEnter={() => navigateTo('monitor')} />
@@ -467,15 +516,15 @@ function App() {
             {!account && <section className="loading-panel"><span className="loader"/><div><strong>Reading account state</strong><span>Waiting for a response from Hyperliquid mainnet.</span></div></section>}
             {account && <>
               <section className="metric-grid">
-                <article className="metric-card hero-metric"><div className="metric-top"><span>Nearest reported liquidation</span><span className={distance && distance.gap <= threshold ? 'risk-tag danger' : distance && distance.gap <= threshold * 2 ? 'risk-tag watch' : 'risk-tag'}>{riskBand}</span></div><div className="metric-value">{distance ? `${distance.gap.toFixed(2)}%` : '—'}</div><div className="metric-bottom">{distance ? `${distance.coin} ${distance.side.toLowerCase()} position` : account.positions.length ? 'Live mark or liquidation price unavailable' : 'No open positions reported'}</div><RiskLine samples={riskSamples} threshold={threshold}/></article>
+                <article className="metric-card hero-metric"><div className="metric-top"><span>Nearest liquidation distance</span><span className={riskBand === 'Near threshold' ? 'risk-tag danger' : riskBand === 'Watch' || riskBand === 'Partial data' || riskBand === 'Account data unavailable' ? 'risk-tag watch' : 'risk-tag'}>{riskBand}</span></div><div className="metric-value">{distance ? `${distance.gap.toFixed(2)}%` : '—'}</div><div className="metric-bottom">{distance ? `${distance.coin} ${distance.side.toLowerCase()} position${unavailablePositionCount ? ` · ${unavailablePositionCount} position${unavailablePositionCount === 1 ? '' : 's'} unavailable` : ''}` : account.positions.length ? !accountFresh ? 'Refresh account data before using this signal' : markConnection === 'reconnecting' ? 'Reconnecting to the mark price feed' : `${unavailablePositionCount} position${unavailablePositionCount === 1 ? '' : 's'} need a fresh mark and reported liquidation price` : 'No open positions reported'}</div><RiskLine samples={!accountFresh || unavailablePositionCount ? [] : riskSamples} threshold={threshold}/></article>
                 <article className="metric-card"><div className="metric-top"><span>Account value</span><span className="metric-icon"><Icon name="activity"/></span></div><div className="metric-value">{money(account.accountValue)}</div><div className="metric-bottom">Reported by Hyperliquid</div></article>
                 <article className="metric-card"><div className="metric-top"><span>Maintenance margin</span><span className="metric-icon"><Icon name="shield"/></span></div><div className="metric-value">{money(account.maintenanceMargin)}</div><div className="metric-bottom">Cross maintenance margin reported by Hyperliquid</div></article>
               </section>
-              <section className="market-row"><div className="section-title"><div><p className="eyebrow">LIVE MARKET</p><h2>Reference prices</h2></div><span className="live-label"><i className={live ? 'dot good' : 'dot warn'}/>{live ? 'Streaming' : 'Waiting for feed'}</span></div><div className="market-grid">{['BTC','ETH','HYPE'].map((coin) => <div className="market-card" key={coin}><span className="coin-badge">{coin.slice(0,1)}</span><div><span className="market-name">{coin}</span><strong>{mids[coin] ? money(mids[coin]) : 'No live price'}</strong></div><span className="market-status">{mids[coin] ? 'HyperCore' : 'Unavailable'}</span></div>)}</div></section>
-              <section className="positions-section"><div className="section-title"><div><p className="eyebrow">ACCOUNT STATE</p><h2>Open positions <span className="count-badge">{account.positions.length}</span></h2></div><span className="data-source">Source: Hyperliquid account state</span></div>
-                {account.positions.length ? <div className="table-wrap"><table><thead><tr><th>Market</th><th>Direction</th><th>Position value</th><th>Entry price</th><th>Live mark</th><th>Unrealized PnL</th><th>Reported liquidation</th></tr></thead><tbody>{account.positions.map((position) => { const mark = mids[position.coin]; return <tr key={position.coin}><td><strong className="market-symbol">{position.coin}</strong></td><td><span className={position.size > 0 ? 'side long' : 'side short'}>{position.size > 0 ? 'Long' : 'Short'}</span></td><td>{money(position.value)}</td><td>{position.entryPrice ? money(position.entryPrice) : 'Not provided'}</td><td>{mark ? money(mark) : 'No live price'}</td><td className={position.pnl >= 0 ? 'positive' : 'negative'}>{money(position.pnl)}</td><td>{position.liquidationPrice ? money(position.liquidationPrice) : 'Not provided'}</td></tr>})}</tbody></table></div> : <div className="empty-positions"><span className="empty-icon"><Icon name="pulse"/></span><strong>No open positions</strong><span>Hyperliquid returned no active positions for this account.</span></div>}
+              <section className="market-row"><div className="section-title"><div><p className="eyebrow">LIVE MARKET</p><h2>Reference mid prices</h2></div><span className="live-label"><i className={live ? 'dot good' : 'dot warn'}/>{live ? 'Streaming' : 'Waiting for feed'}</span></div><div className="market-grid">{['BTC','ETH','HYPE'].map((coin) => <div className="market-card" key={coin}><span className="coin-badge">{coin.slice(0,1)}</span><div><span className="market-name">{coin}</span><strong>{mids[coin] ? money(mids[coin]) : 'No live price'}</strong></div><span className="market-status">{mids[coin] ? 'HyperCore' : 'Unavailable'}</span></div>)}</div></section>
+              <section className="positions-section"><div className="section-title"><div><p className="eyebrow">ACCOUNT STATE</p><h2>Open positions <span className="count-badge">{account.positions.length}</span></h2></div><span className="data-source">{markConnection === 'live' ? 'Position mark prices streaming' : markConnection === 'reconnecting' ? 'Mark price feed reconnecting' : 'Waiting for position mark prices'}</span></div>
+                {account.positions.length ? <div className="table-wrap"><table><thead><tr><th>Market</th><th>Direction</th><th>Position value</th><th>Entry price</th><th>Live mark price</th><th>Liquidation distance</th><th>Unrealized PnL</th><th>Reported liquidation</th></tr></thead><tbody>{account.positions.map((position) => { const quote = markPrices[position.coin]; const fresh = quote && clock - quote.receivedAt <= 30000; const mark = fresh ? quote.price : undefined; const positionDistance = positionLiquidationDistance(position, mark); const gap = positionDistance?.gap; return <tr key={position.coin}><td><strong className="market-symbol">{position.coin}</strong></td><td><span className={position.size > 0 ? 'side long' : 'side short'}>{position.size > 0 ? 'Long' : 'Short'}</span></td><td>{position.value !== null ? money(position.value) : 'Not provided'}</td><td>{position.entryPrice !== null ? money(position.entryPrice) : 'Not provided'}</td><td><span>{mark !== undefined ? money(mark) : quote ? 'Stale' : 'Waiting'}</span>{quote && <small className="price-age">Updated {Math.max(0, Math.floor((clock - quote.receivedAt) / 1000))} seconds ago</small>}</td><td><span className={`distance-value ${gap === undefined ? 'unavailable' : gap <= threshold ? 'near' : 'clear'}`}>{gap === undefined ? 'Unavailable' : gap < 0 ? `${Math.abs(gap).toFixed(2)}% past level` : `${gap.toFixed(2)}% away`}</span></td><td className={position.pnl === null ? '' : position.pnl >= 0 ? 'positive' : 'negative'}>{position.pnl !== null ? money(position.pnl) : 'Not provided'}</td><td>{position.liquidationPrice && position.liquidationPrice > 0 ? money(position.liquidationPrice) : 'Not provided'}</td></tr>})}</tbody></table></div> : <div className="empty-positions"><span className="empty-icon"><Icon name="pulse"/></span><strong>No open positions</strong><span>Hyperliquid returned no active positions for this account.</span></div>}
               </section>
-              <section className="disclosure"><Icon name="shield"/><p><strong>What this signal means</strong> Hydromancer compares live mid prices with liquidation prices returned for each position by Hyperliquid. The nearest percentage distance is a monitoring signal, not a liquidation guarantee or trading recommendation. When prices or account fields are missing, the signal is unavailable instead of estimated.</p></section>
+              <section className="disclosure"><Icon name="shield"/><p><strong>What this signal means</strong> Hydromancer compares fresh mark prices with liquidation prices returned for each position by Hyperliquid. Hyperliquid uses mark price for liquidations. The nearest percentage distance is a monitoring signal, not a liquidation guarantee or trading recommendation. A position with missing or stale inputs is marked unavailable, and alerts pause until every open position can be assessed.</p></section>
             </>}
           </>}
         </>}
@@ -498,11 +547,11 @@ function Landing({ onEnter, address }: { onEnter: () => void; address: string })
   return <main className="landing-page">
     <header className="landing-nav"><button className="landing-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><span className="brand-mark"><Icon name="water"/></span>HYDROMANCER</button><nav><a href="#how-it-works">How it works</a><a href="#security">Security</a><button className="nav-cta" onClick={onEnter}>{address ? 'Open monitor' : 'Start monitoring'}<Icon name="arrow"/></button></nav></header>
     <section className="landing-hero">
-      <div className="hero-copy"><p className="eyebrow"><i className="dot good"/> BUILT FOR HYPERCORE</p><h1>Know how close<br/>your position is to<br/><em>the edge.</em></h1><p className="hero-summary">Hydromancer watches your Hyperliquid positions against live market prices and the liquidation levels reported by your account.</p><div className="hero-actions"><button className="primary-button hero-button" onClick={onEnter}>{address ? 'Open your monitor' : 'Monitor an account'}<Icon name="arrow"/></button><a className="text-link" href="#how-it-works">See how it works</a></div><div className="hero-proof"><span><Icon name="shield"/> Public data only</span><span><Icon name="pulse"/> Live market feed</span><span><Icon name="water"/> No trade access</span></div></div>
+      <div className="hero-copy"><p className="eyebrow"><i className="dot good"/> BUILT FOR HYPERCORE</p><h1>Know how close<br/>your position is to<br/><em>the edge.</em></h1><p className="hero-summary">Hydromancer compares each open position with its Hyperliquid reported liquidation level using the live mark price that drives liquidation checks.</p><div className="hero-actions"><button className="primary-button hero-button" onClick={onEnter}>{address ? 'Open your monitor' : 'Monitor an account'}<Icon name="arrow"/></button><a className="text-link" href="#how-it-works">See how it works</a></div><div className="hero-proof"><span><Icon name="shield"/> Public data only</span><span><Icon name="pulse"/> Live market feed</span><span><Icon name="water"/> No trade access</span></div></div>
       <div className="hero-visual"><img className="hero-image" src="/hydromancer-hero.svg" alt="Abstract water rings surrounding a monitored market signal"/><div className="hero-image-shade"/><div className="visual-label visual-label-top"><i className="dot good"/> HYPERCORE DATA <span>PUBLIC FEED</span></div><div className="visual-label visual-label-side"><span className="label-orbit"/><span>MARKET<br/>SIGNAL</span></div><div className="visual-caption"><span>01 / ACCOUNT SAFETY</span><span>READ ONLY MONITORING</span></div><div className="visual-line"/></div>
       <div className="hero-bottom"><span>MONITOR THE DISTANCE</span><span className="hero-bottom-line"/><span>MAKE YOUR OWN DECISION</span></div>
     </section>
-    <section className="landing-value" id="how-it-works"><div className="value-intro"><p className="eyebrow">CLEAR SIGNALS FROM LIVE DATA</p><h2>Account risk,<br/>without the guesswork.</h2><p>Hydromancer reads public account state from Hyperliquid and compares each live market price with the liquidation price returned for that position.</p></div><div className="value-steps"><article><span className="step-number">01</span><h3>Connect a public address</h3><p>Use an account address. No private key, wallet connection, or trading permission.</p></article><article><span className="step-number">02</span><h3>Watch live positions</h3><p>See market prices, position values, unrealized PnL, and reported liquidation levels.</p></article><article><span className="step-number">03</span><h3>Set your own threshold</h3><p>Choose when Hydromancer should raise a browser alert. Review every event in your activity view.</p></article></div></section>
+    <section className="landing-value" id="how-it-works"><div className="value-intro"><p className="eyebrow">CLEAR SIGNALS FROM LIVE DATA</p><h2>Account risk,<br/>without the guesswork.</h2><p>Hydromancer compares each position's reported liquidation level with its current mark price. Mid prices stay visible as separate market references.</p></div><div className="value-steps"><article><span className="step-number">01</span><h3>Connect a public address</h3><p>Use an account address. No private key, wallet connection, or trading permission.</p></article><article><span className="step-number">02</span><h3>Watch live positions</h3><p>See mark prices, position values, unrealized PnL, and reported liquidation levels.</p></article><article><span className="step-number">03</span><h3>Set your own threshold</h3><p>Choose when Hydromancer should raise an alert. Review every event in your activity view.</p></article></div></section>
     <section className="landing-safety" id="security"><div className="safety-mark"><Icon name="shield"/></div><div><p className="eyebrow">DESIGNED TO OBSERVE</p><h2>Your account stays yours.</h2><p>Hydromancer requests public account and market data from Hyperliquid. It never asks for a seed phrase, stores a private key, signs a transaction, or places an order. A private session keeps each visitor's monitor and activity separate.</p></div><a href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint" target="_blank" rel="noreferrer">Read the API documentation <Icon name="external"/></a></section>
     <footer className="landing-footer"><button className="landing-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><span className="brand-mark"><Icon name="water"/></span>HYDROMANCER</button><span>Independent monitoring for Hyperliquid traders</span><button className="footer-enter" onClick={onEnter}>Open the monitor <Icon name="arrow"/></button></footer>
   </main>
@@ -512,9 +561,12 @@ function RiskLine({ samples, threshold }: { samples: number[]; threshold: number
   if (samples.length < 2) return <div className="chart-empty">Live observations will draw here after the next account update</div>
   const width = 260
   const height = 48
+  const min = Math.min(0, ...samples)
   const max = Math.max(threshold * 2, ...samples, 1)
-  const points = samples.map((value, index) => `${(index / (samples.length - 1)) * width},${height - (Math.min(value, max) / max) * height}`).join(' ')
-  const thresholdY = height - (Math.min(threshold, max) / max) * height
+  const span = max - min || 1
+  const y = (value: number) => height - ((Math.max(min, Math.min(value, max)) - min) / span) * height
+  const points = samples.map((value, index) => `${(index / (samples.length - 1)) * width},${y(value)}`).join(' ')
+  const thresholdY = y(threshold)
   return <div className="risk-chart" aria-label="Observed distance to liquidation over recent account updates"><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"><line x1="0" x2={width} y1={thresholdY} y2={thresholdY} className="threshold-line"/><polyline points={points} className="risk-polyline"/></svg><span>Recent account observations</span></div>
 }
 
