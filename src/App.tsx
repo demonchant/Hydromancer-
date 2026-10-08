@@ -11,6 +11,13 @@ const ADDRESS_KEY = 'hydromancer.address'
 const THRESHOLD_KEY = 'hydromancer.threshold'
 const ALERTS_KEY = 'hydromancer.alerts'
 
+function routeFromPath(pathname: string): { screen: 'landing' | 'monitor'; tab: Tab } {
+  if (pathname === '/activity') return { screen: 'monitor', tab: 'activity' }
+  if (pathname === '/settings') return { screen: 'monitor', tab: 'settings' }
+  if (pathname === '/overview') return { screen: 'monitor', tab: 'overview' }
+  return { screen: 'landing', tab: 'overview' }
+}
+
 function readAlerts(): AlertEvent[] {
   try { return JSON.parse(localStorage.getItem(ALERTS_KEY) ?? '[]') as AlertEvent[] } catch { return [] }
 }
@@ -33,7 +40,7 @@ function Icon({ name }: { name: 'water' | 'pulse' | 'shield' | 'activity' | 'set
 }
 
 function App() {
-  const [screen, setScreen] = useState<'landing' | 'monitor'>('landing')
+  const [screen, setScreen] = useState<'landing' | 'monitor'>(() => routeFromPath(window.location.pathname).screen)
   const [address, setAddress] = useState(() => backendConfigured ? '' : localStorage.getItem(ADDRESS_KEY) ?? '')
   const [input, setInput] = useState(() => backendConfigured ? '' : localStorage.getItem(ADDRESS_KEY) ?? '')
   const [account, setAccount] = useState<AccountSnapshot | null>(null)
@@ -42,7 +49,7 @@ function App() {
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
   const [formError, setFormError] = useState('')
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(() => routeFromPath(window.location.pathname).tab)
   const [threshold, setThreshold] = useState(() => backendConfigured ? 8 : Number(localStorage.getItem(THRESHOLD_KEY) ?? 8))
   const [alerts, setAlerts] = useState<AlertEvent[]>(() => backendConfigured ? [] : readAlerts())
   const [authUser, setAuthUser] = useState<User | null>(null)
@@ -64,6 +71,24 @@ function App() {
   const activeAddress = useRef(address)
   const requestController = useRef<AbortController | null>(null)
   const hostedMode = Boolean(backendConfigured && authUser)
+
+  function navigateTo(nextScreen: 'landing' | 'monitor', nextTab: Tab = 'overview') {
+    const nextPath = nextScreen === 'landing' ? '/' : `/${nextTab}`
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath)
+    setScreen(nextScreen)
+    setTab(nextTab)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = routeFromPath(window.location.pathname)
+      setScreen(route.screen)
+      setTab(route.tab)
+    }
+    window.addEventListener('popstate', syncRoute)
+    return () => window.removeEventListener('popstate', syncRoute)
+  }, [])
 
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return }
@@ -390,16 +415,16 @@ function App() {
   const riskBand = !distance ? 'Not available' : distance.gap <= threshold ? 'Near threshold' : distance.gap <= threshold * 2 ? 'Watch' : 'Clear'
   const dataAge = account ? Math.max(0, Math.floor((clock - account.receivedAt) / 1000)) : null
 
-  if (screen === 'landing') return <Landing address={address} onEnter={() => setScreen('monitor')} />
+  if (screen === 'landing') return <Landing address={address} onEnter={() => navigateTo('monitor')} />
 
   return <div className="app-shell">
     <aside className="rail">
-      <button className="brand" onClick={() => setScreen('landing')} aria-label="Hydromancer home"><span className="brand-mark"><Icon name="water" /></span><span>HYDROMANCER</span></button>
+      <button className="brand" onClick={() => navigateTo('landing')} aria-label="Hydromancer home"><span className="brand-mark"><Icon name="water" /></span><span>HYDROMANCER</span></button>
       <div className="rail-rule" />
       <nav aria-label="Main navigation" className="rail-nav">
-        <button className={tab === 'overview' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'overview' ? 'page' : undefined} onClick={() => setTab('overview')}><Icon name="pulse"/><span>Overview</span></button>
-        <button className={tab === 'activity' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'activity' ? 'page' : undefined} onClick={() => setTab('activity')}><Icon name="activity"/><span>Activity</span></button>
-        <button className={tab === 'settings' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'settings' ? 'page' : undefined} onClick={() => setTab('settings')}><Icon name="settings"/><span>Settings</span></button>
+        <button className={tab === 'overview' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'overview' ? 'page' : undefined} onClick={() => navigateTo('monitor', 'overview')}><Icon name="pulse"/><span>Overview</span></button>
+        <button className={tab === 'activity' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'activity' ? 'page' : undefined} onClick={() => navigateTo('monitor', 'activity')}><Icon name="activity"/><span>Activity</span></button>
+        <button className={tab === 'settings' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'settings' ? 'page' : undefined} onClick={() => navigateTo('monitor', 'settings')}><Icon name="settings"/><span>Settings</span></button>
       </nav>
       <div className="rail-bottom">
         <span className="rail-label">NETWORK</span>
@@ -410,8 +435,8 @@ function App() {
 
     <main className="main-area">
       <header className="topbar">
-        <button className="mobile-brand" onClick={() => setScreen('landing')}><span className="brand-mark"><Icon name="water" /></span>HYDROMANCER</button>
-        <button className="home-button" onClick={() => setScreen('landing')}>Landing page</button>
+        <button className="mobile-brand" onClick={() => navigateTo('landing')}><span className="brand-mark"><Icon name="water" /></span>HYDROMANCER</button>
+        <button className="home-button" onClick={() => navigateTo('landing')}>Landing page</button>
         <div className="topbar-spacer" />
         <div className="connection"><i className={live ? 'dot good' : 'dot warn'} /><span>{live ? 'Market feed live' : connection === 'connecting' ? 'Connecting to market' : 'Market feed reconnecting'}</span></div>
         {hostedMode && <span className="private-session"><i className="dot good"/>Private session</span>}

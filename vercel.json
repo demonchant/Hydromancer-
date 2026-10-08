@@ -2,6 +2,11 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/overview", "destination": "/" },
+    { "source": "/activity", "destination": "/" },
+    { "source": "/settings", "destination": "/" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
