@@ -397,9 +397,9 @@ function App() {
       <button className="brand" onClick={() => setScreen('landing')} aria-label="Hydromancer home"><span className="brand-mark"><Icon name="water" /></span><span>HYDROMANCER</span></button>
       <div className="rail-rule" />
       <nav aria-label="Main navigation" className="rail-nav">
-        <button className={tab === 'overview' ? 'nav-item selected' : 'nav-item'} onClick={() => setTab('overview')}><Icon name="pulse"/><span>Overview</span></button>
-        <button className={tab === 'activity' ? 'nav-item selected' : 'nav-item'} onClick={() => setTab('activity')}><Icon name="activity"/><span>Activity</span></button>
-        <button className={tab === 'settings' ? 'nav-item selected' : 'nav-item'} onClick={() => setTab('settings')}><Icon name="settings"/><span>Settings</span></button>
+        <button className={tab === 'overview' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'overview' ? 'page' : undefined} onClick={() => setTab('overview')}><Icon name="pulse"/><span>Overview</span></button>
+        <button className={tab === 'activity' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'activity' ? 'page' : undefined} onClick={() => setTab('activity')}><Icon name="activity"/><span>Activity</span></button>
+        <button className={tab === 'settings' ? 'nav-item selected' : 'nav-item'} aria-current={tab === 'settings' ? 'page' : undefined} onClick={() => setTab('settings')}><Icon name="settings"/><span>Settings</span></button>
       </nav>
       <div className="rail-bottom">
         <span className="rail-label">NETWORK</span>
@@ -411,15 +411,16 @@ function App() {
     <main className="main-area">
       <header className="topbar">
         <button className="mobile-brand" onClick={() => setScreen('landing')}><span className="brand-mark"><Icon name="water" /></span>HYDROMANCER</button>
+        <button className="home-button" onClick={() => setScreen('landing')}>Landing page</button>
         <div className="topbar-spacer" />
         <div className="connection"><i className={live ? 'dot good' : 'dot warn'} /><span>{live ? 'Market feed live' : connection === 'connecting' ? 'Connecting to market' : 'Market feed reconnecting'}</span></div>
         {hostedMode && <span className="private-session"><i className="dot good"/>Private session</span>}
         {address && <button className="address-chip" onClick={() => void disconnect()} title="Remove the saved account address">{shortAddress(address)} <span aria-hidden="true">×</span></button>}
       </header>
 
-      <div className="page-content">
+      <div className={`page-content monitor-page page-${tab}`}>
         <section className="page-heading">
-          <div><p className="eyebrow">HYPERCORE ACCOUNT MONITOR</p><h1>{tab === 'overview' ? 'Risk overview' : tab === 'activity' ? 'Alert activity' : 'Monitor settings'}</h1><p className="subtitle">See account risk from live Hyperliquid data, with every signal tied to its source.</p></div>
+          <div><p className="eyebrow">HYPERCORE ACCOUNT MONITOR</p><h1>{tab === 'overview' ? 'Risk overview' : tab === 'activity' ? 'Alert activity' : 'Monitor settings'}</h1><p className="subtitle">{tab === 'overview' ? 'See account risk from live Hyperliquid data, with every signal tied to its source.' : tab === 'activity' ? 'Review warning and recovery events recorded for this monitor.' : 'Set your risk threshold and manage browser alert preferences.'}</p></div>
           <div className="sync-state"><i className={accountReady ? 'dot good' : 'dot warn'} />{accountReady ? `Account data updated ${dataAge === 0 ? 'just now' : `${dataAge}s ago`}` : address ? 'Waiting for account data' : 'No account connected'}</div>
         </section>
 
