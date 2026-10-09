@@ -69,16 +69,17 @@ export async function fetchAccount(address: string, signal?: AbortSignal): Promi
   if (!Number.isFinite(accountValue) || !Number.isFinite(maintenanceMargin)) {
     throw new Error('Hyperliquid returned incomplete margin data for this address.')
   }
-  const positions = (raw.assetPositions ?? []).flatMap(({ position }): Position[] => {
-    if (!position?.coin) return []
+  if (!Array.isArray(raw.assetPositions)) throw new Error('Hyperliquid returned an invalid position list for this address.')
+  const positions = raw.assetPositions.map(({ position }): Position => {
+    if (!position?.coin) throw new Error('Hyperliquid returned a position without a market symbol.')
     const size = Number(position.szi)
-    if (!Number.isFinite(size) || size === 0) return []
+    if (!Number.isFinite(size) || size === 0) throw new Error(`Hyperliquid returned an invalid size for ${position.coin}.`)
     const n = (value: string | null | undefined) => {
       const parsed = Number(value)
       return value !== undefined && value !== null && value !== '' && Number.isFinite(parsed) ? parsed : null
     }
     const leverage = position.leverage?.value
-    return [{
+    return {
       coin: position.coin,
       size,
       entryPrice: n(position.entryPx),
@@ -87,7 +88,7 @@ export async function fetchAccount(address: string, signal?: AbortSignal): Promi
       pnl: n(position.unrealizedPnl),
       leverage: leverage !== undefined && Number.isFinite(leverage) ? leverage : null,
       liquidationPrice: position.liquidationPx ? n(position.liquidationPx) : null,
-    }]
+    }
   })
   return {
     address,
@@ -108,7 +109,9 @@ export async function fetchMids(signal?: AbortSignal): Promise<Record<string, nu
 }
 
 export async function fetchMarkPrices(signal?: AbortSignal): Promise<Record<string, MarkPriceQuote>> {
-  const [meta, contexts] = await info<RawPerpMetaAndContexts>({ type: 'metaAndAssetCtxs' }, signal)
+  const raw: unknown = await info<unknown>({ type: 'metaAndAssetCtxs' }, signal)
+  if (!Array.isArray(raw) || raw.length < 2) throw new Error('Hyperliquid returned an invalid mark price snapshot.')
+  const [meta, contexts] = raw as RawPerpMetaAndContexts
   if (!Array.isArray(meta?.universe) || !Array.isArray(contexts)) {
     throw new Error('Hyperliquid returned an invalid mark price snapshot.')
   }

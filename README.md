@@ -76,6 +76,8 @@ These values are local development configuration. `.env.local` is ignored by Git
 
 ## Build and verify
 
+Judges can reproduce the automated checks from the repository root with `npm ci`, `npm.cmd run test`, and `npm.cmd run build` (or the equivalent `npm run` commands on Unix-like shells). The test and build details, scope, and manual integration checklist are in [docs/TESTING.md](docs/TESTING.md). Real trader feedback can be recorded in [docs/TESTER_FEEDBACK.md](docs/TESTER_FEEDBACK.md).
+
 ```powershell
 npm run build
 npm run test
