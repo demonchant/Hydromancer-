@@ -14,7 +14,7 @@ It does not estimate liquidation prices. If the exchange does not return the req
 
 ## Try it
 
-1. Open the deployed site.
+1. Open the [deployed Hydromancer site](https://hydromancer.vercel.app/).
 2. Choose **Monitor an account**, then **Continue privately**.
 3. Complete the security check if it appears.
 4. Enter a public Hyperliquid account address you are allowed to inspect.
