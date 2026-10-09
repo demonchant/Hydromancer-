@@ -31,7 +31,7 @@ The production build checks the frontend TypeScript project and bundles the Vite
 
 ### Hosted service probes performed
 
-Using the existing local public Supabase configuration, a read-only Auth settings request succeeded. A POST to the monitor endpoint with a deliberately invalid secret returned `401`, as expected from its authorization gate. The deployed site at [hydromancer.vercel.app](https://hydromancer.vercel.app/) returned `200 OK` from Vercel. The user completed Turnstile sign-in, added an authorized account with an open position, and reported that the UI showed **Server checked**. This confirms a hosted sign-in and a server check reflected by the app. It does not verify isolation between users, Cron cadence, or a persisted warning/recovery event; the activity history has not yet been confirmed.
+Using the existing local public Supabase configuration, a read-only Auth settings request succeeded. A POST to the monitor endpoint with a deliberately invalid secret returned `401`, as expected from its authorization gate. The deployed site at [hydromancer.vercel.app](https://hydromancer.vercel.app/) returned `200 OK` from Vercel. The user completed Turnstile sign-in, added an authorized account with an open position, and reported that the UI showed **Server checked**. The user also checked Activity and reported no warning. That account showed partial position data and a distance outside the selected threshold, so no warning was expected; this does not verify warning/recovery persistence. A suitable follow-up needs complete position data and a real distance within the selected threshold. User-specific account details are intentionally omitted.
 
 ## Manual integration checks
 
