@@ -21,7 +21,7 @@ On Unix-like shells, use `npm run test` and `npm run build`. `npm ci` installs t
 | `npm.cmd run test` | Passed: 2 test files and 33 tests. |
 | `npm.cmd run build` | Passed: `tsc --noEmit` and Vite production build. |
 
-The GitHub Actions workflow at `.github/workflows/checks.yml` runs the Deno check, dependency install, tests, and build for pushes and pull requests. Creating the workflow does not mean a hosted Actions run has succeeded; check the repository's Actions tab after pushing to see its status.
+The GitHub Actions workflow at `.github/workflows/checks.yml` runs the Deno check, dependency install, tests, and build for pushes and pull requests. [Hosted run #1](https://github.com/demonchant/Hydromancer-/actions/runs/37877531895) succeeded for commit `dea3be76f451013fd00e165ada8dc41a046727b0` on the verification branch.
 
 ## Automated test scope
 
@@ -31,7 +31,7 @@ The production build checks the frontend TypeScript project and bundles the Vite
 
 ### Hosted service probes performed
 
-Using the existing local public Supabase configuration, a read-only Auth settings request succeeded. A POST to the monitor endpoint with a deliberately invalid secret returned `401`, as expected from its authorization gate. This confirms that the configured endpoint responds and rejects an invalid secret; it does not confirm that the latest local function source is deployed or that a monitor job was run.
+Using the existing local public Supabase configuration, a read-only Auth settings request succeeded. A POST to the monitor endpoint with a deliberately invalid secret returned `401`, as expected from its authorization gate. This confirms that the configured endpoint responds and rejects an invalid secret; it does not confirm that the latest local function source is deployed or that a monitor job was run. Anonymous sign-in, per-user isolation, scheduled checks, and persisted alert transitions still require an authenticated integration session and remain unverified.
 
 ## Manual integration checks
 
