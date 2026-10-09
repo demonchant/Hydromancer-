@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { nearestLiquidationDistance, type RiskPosition } from '../../../src/risk.ts'
 
 type Monitor = {
   id: string
@@ -47,20 +48,19 @@ function markPricesFromContexts(result: PerpMetaAndContexts): Record<string, num
 }
 
 function nearestGap(state: AccountState, markPrices: Record<string, number>) {
-  const positions = (state.assetPositions ?? []).map((entry): { coin: string; gap: number } | null => {
-    const position = entry.position
-    if (!position?.coin || !position.szi || !position.liquidationPx) return null
-    const size = Number(position.szi)
-    const mark = markPrices[position.coin]
-    const liquidation = Number(position.liquidationPx)
-    if (!Number.isFinite(size) || size === 0 || !Number.isFinite(mark) || mark <= 0 || !Number.isFinite(liquidation) || liquidation <= 0) return null
-    const gap = size > 0 ? ((mark - liquidation) / mark) * 100 : ((liquidation - mark) / mark) * 100
-    return Number.isFinite(gap) ? { coin: position.coin, gap } : null
+  if (!Array.isArray(state.assetPositions)) throw new Error('Hyperliquid returned an invalid position list.')
+  const positions: RiskPosition[] = state.assetPositions.map((entry, index) => {
+    const source = entry?.position
+    const size = Number(source?.szi)
+    const liquidation = source?.liquidationPx
+    return {
+      coin: typeof source?.coin === 'string' && source.coin ? source.coin : `Unknown position ${index + 1}`,
+      size,
+      liquidationPrice: liquidation === null || liquidation === undefined || liquidation === '' ? null : Number(liquidation),
+    }
   })
-  if (positions.some((position) => position === null)) return null
-  const distances = positions.filter((position): position is { coin: string; gap: number } => position !== null)
-  distances.sort((left, right) => left.gap - right.gap)
-  return distances[0] ?? null
+  const assessment = nearestLiquidationDistance(positions, markPrices)
+  return assessment.status === 'available' ? assessment.distance : null
 }
 
 Deno.serve(async (request: Request) => {

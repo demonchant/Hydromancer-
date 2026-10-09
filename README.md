@@ -14,7 +14,7 @@ It does not estimate liquidation prices. If the exchange does not return the req
 
 ## Try it
 
-1. Open the deployed site.
+1. Open the [deployed Hydromancer site](https://hydromancer.vercel.app/).
 2. Choose **Monitor an account**, then **Continue privately**.
 3. Complete the security check if it appears.
 4. Enter a public Hyperliquid account address you are allowed to inspect.
@@ -75,6 +75,8 @@ VITE_TURNSTILE_SITE_KEY=YOUR_TURNSTILE_SITE_KEY
 These values are local development configuration. `.env.local` is ignored by Git and must never be committed. The Turnstile secret and monitor cron secret belong in the Supabase dashboard or Vault, never in the browser.
 
 ## Build and verify
+
+Judges can reproduce the automated checks from the repository root with `npm ci`, `npm.cmd run test`, and `npm.cmd run build` (or the equivalent `npm run` commands on Unix-like shells). The test and build details, scope, and manual integration checklist are in [docs/TESTING.md](docs/TESTING.md). Real trader feedback can be recorded in [docs/TESTER_FEEDBACK.md](docs/TESTER_FEEDBACK.md).
 
 ```powershell
 npm run build

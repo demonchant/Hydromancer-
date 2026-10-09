@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccountSnapshot, connectMarkPrices, connectMids, fetchAccount, fetchMarkPrices, fetchMids, MarkPriceQuote, validAddress } from './hyperliquid'
-import { nearestLiquidationDistance, positionLiquidationDistance } from './risk'
+import { evaluateAlertTransition, freshMarkPrices, nearestLiquidationDistance, positionLiquidationDistance } from './risk'
 import { backendConfigured, MonitorRow, StoredAlert, supabase, turnstileSiteKey } from './supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -66,7 +66,7 @@ function App() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() => 'Notification' in window ? Notification.permission : 'unsupported')
   const [riskSamples, setRiskSamples] = useState<number[]>([])
   const [clock, setClock] = useState(Date.now())
-  const priorRisk = useRef<number | null>(null)
+  const localInWarning = useRef(false)
   const sessionLoaded = useRef('')
   const serverEventIds = useRef<Set<string>>(new Set())
   const requestInFlight = useRef(false)
@@ -204,21 +204,18 @@ function App() {
     return () => { active = false; window.clearInterval(timer) }
   }, [authUser, settingsDirty])
 
-  const freshMarkPrices = useMemo(() => Object.fromEntries(
-    Object.entries(markPrices)
-      .filter(([, quote]) => clock - quote.receivedAt <= 30000)
-      .map(([coin, quote]) => [coin, quote.price]),
-  ), [markPrices, clock])
+  const freshMarks = useMemo(() => freshMarkPrices(markPrices, clock), [markPrices, clock])
   const accountFresh = Boolean(account && !syncError && clock - account.receivedAt <= 30000)
 
-  const distance = useMemo(() => {
-    if (!account || !accountFresh) return null
-    return nearestLiquidationDistance(account.positions, freshMarkPrices)
-  }, [account, accountFresh, freshMarkPrices])
-  const assessedPositionCount = useMemo(() => account?.positions.reduce((count, position) => (
-    positionLiquidationDistance(position, freshMarkPrices[position.coin]) ? count + 1 : count
-  ), 0) ?? 0, [account, freshMarkPrices])
-  const unavailablePositionCount = (account?.positions.length ?? 0) - assessedPositionCount
+  const riskAssessment = useMemo(() => {
+    if (!account) return null
+    if (!accountFresh) return { status: 'unavailable' as const, reason: 'stale_account' as const, unavailableCoins: [] }
+    return nearestLiquidationDistance(account.positions, freshMarks)
+  }, [account, accountFresh, freshMarks])
+  const distance = riskAssessment?.status === 'available' ? riskAssessment.distance : null
+  const unavailablePositionCount = riskAssessment?.status === 'unavailable' && riskAssessment.reason === 'incomplete_positions'
+    ? riskAssessment.unavailableCoins.length
+    : 0
 
   const addAlert = useCallback((kind: AlertEvent['kind'], message: string) => {
     if (hostedMode) return
@@ -280,7 +277,7 @@ function App() {
       activeAddress.current = ''
       setAccount(null)
       setRiskSamples([])
-      priorRisk.current = null
+      localInWarning.current = false
       markFeed.current?.setCoins([])
       return
     }
@@ -290,7 +287,7 @@ function App() {
     setAccount(null)
     setSyncError('')
     setRiskSamples([])
-    priorRisk.current = null
+    localInWarning.current = false
     const markSnapshotController = new AbortController()
     void fetchMarkPrices(markSnapshotController.signal).then((snapshot) => {
       setMarkPrices((current) => {
@@ -317,15 +314,10 @@ function App() {
 
   useEffect(() => {
     if (hostedMode || !distance || unavailablePositionCount > 0 || syncError || !account || Date.now() - account.receivedAt > 30000) return
-    const prior = priorRisk.current
-    if (prior === null && distance.gap <= threshold) {
-      addAlert('warning', `${distance.coin} is ${distance.gap.toFixed(2)} percent from its reported liquidation price.`)
-    } else if (prior !== null && prior > threshold && distance.gap <= threshold) {
-      addAlert('warning', `${distance.coin} moved within ${distance.gap.toFixed(2)} percent of its reported liquidation price.`)
-    } else if (prior !== null && prior <= threshold && distance.gap > threshold) {
-      addAlert('recovery', `The nearest reported liquidation price is now ${distance.gap.toFixed(2)} percent away.`)
-    }
-    priorRisk.current = distance.gap
+    const transition = evaluateAlertTransition(localInWarning.current, distance.gap, threshold)
+    if (transition.kind === 'warning') addAlert('warning', `${distance.coin} is ${distance.gap.toFixed(2)} percent from its reported liquidation price.`)
+    if (transition.kind === 'recovery') addAlert('recovery', `The nearest reported liquidation price is now ${distance.gap.toFixed(2)} percent away.`)
+    localInWarning.current = transition.inWarning
     setRiskSamples((samples) => [...samples.slice(-47), distance.gap])
   }, [distance, threshold, addAlert, syncError, account, hostedMode, unavailablePositionCount])
 
@@ -413,7 +405,7 @@ function App() {
     setAddress('')
     setInput('')
     setAccount(null)
-    priorRisk.current = null
+    localInWarning.current = false
     setRiskSamples([])
     if (!hostedMode) setNotice('Account address removed from this browser.')
   }
@@ -461,7 +453,11 @@ function App() {
   const accountReady = Boolean(account && !syncError)
   const serverCheckAge = serverMonitor?.last_checked_at ? Math.max(0, Math.floor((clock - new Date(serverMonitor.last_checked_at).getTime()) / 1000)) : null
   const serverHealthy = Boolean(hostedMode && serverCheckAge !== null && serverCheckAge < 120 && !serverMonitor?.last_error)
-  const riskBand = account && !accountFresh ? 'Account data unavailable' : unavailablePositionCount > 0 ? 'Partial data' : !distance ? 'Not available' : distance.gap <= threshold ? 'Near threshold' : distance.gap <= threshold * 2 ? 'Watch' : 'Clear'
+  const riskBand = riskAssessment?.status === 'unavailable' && riskAssessment.reason === 'stale_account'
+    ? 'Account data unavailable'
+    : riskAssessment?.status === 'unavailable' && riskAssessment.reason === 'incomplete_positions'
+      ? 'Partial data'
+      : !distance ? 'Not available' : distance.gap <= threshold ? 'Near threshold' : distance.gap <= threshold * 2 ? 'Watch' : 'Clear'
   const dataAge = account ? Math.max(0, Math.floor((clock - account.receivedAt) / 1000)) : null
 
   if (screen === 'landing') return <Landing address={address} onEnter={() => navigateTo('monitor')} />
