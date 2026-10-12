@@ -90,7 +90,7 @@ Never expose `MONITOR_CRON_SECRET` or `SUPABASE_SERVICE_ROLE_KEY` in a client en
 
 ## Hackathon fit
 
-Hydromancer integrates with HyperCore through Hyperliquid's public account information endpoint and live WebSocket feed. It is designed around the Crypto World's Fair judging areas: working software, trader impact, a position aware signal, a clear user flow, open source code, and a focused business hypothesis. Product claims remain limited to behavior that can be demonstrated with real data. The entrant must complete registration, rule acceptance, eligibility review, and project submission on Colosseum.
+Hydromancer integrates with HyperCore through Hyperliquid's public account information endpoint and live WebSocket feed. It is designed around the Crypto World's Fair judging areas: working software, trader impact, a position aware signal, a clear user flow, open source code, and a focused business hypothesis. Product claims remain limited to behavior that can be demonstrated with real data. The entrant must complete registration, rule acceptance, eligibility review, and project submission on Colosseum.   https://x.com/thoyourbaby/status/2109551323985162414?s=46
 
 ## License
 
